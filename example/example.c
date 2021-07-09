@@ -45,7 +45,7 @@ static int bake(scene_t *scene)
 		64,               // hemisphere resolution (power of two, max=512)
 		0.001f, 100.0f,   // zNear, zFar of hemisphere cameras
 		1.0f, 1.0f, 1.0f, // background color (white for ambient occlusion)
-		2, 0.01f,         // lightmap interpolation threshold (small differences are interpolated rather than sampled)
+		0, 0.01f,         // lightmap interpolation threshold (small differences are interpolated rather than sampled)
 						  // check debug_interpolation.tga for an overview of sampled (red) vs interpolated (green) pixels.
 		0.0f);            // modifier for camera-to-surface distance for hemisphere rendering.
 		                  // tweak this to trade-off between interpolated normals quality and other artifacts (see declaration).
@@ -56,7 +56,7 @@ static int bake(scene_t *scene)
 		return 0;
 	}
 
-	int w = scene->w, h = scene->h;
+	int w = 64, h = 64; //scene->w, h = scene->h;
 	float *data = calloc(w * h * 4, sizeof(float));
 	lmSetTargetLightmap(ctx, data, w, h, 4);
 
@@ -211,13 +211,57 @@ int main(int argc, char* argv[])
 static int loadSimpleObjFile(const char *filename, vertex_t **vertices, unsigned int *vertexCount, unsigned short **indices, unsigned int *indexCount);
 static GLuint loadProgram(const char *vp, const char *fp, const char **attributes, int attributeCount);
 
+static void add_test_obj(vertex_t **vertices, unsigned int *vertexCount, unsigned short **indices, unsigned int *indexCount)
+{
+	*vertexCount = 8;
+	*vertices = calloc(*vertexCount, sizeof(vertex_t));
+
+	#define SET_P(_V, _x, _y, _z, _u, _v) (_V)->p[0] = _x, (_V)->p[1] = _y, (_V)->p[2] = _z, (_V)->t[0] = _u, (_V)->t[1] = _v
+	SET_P(*vertices+0, -1.0f, 0.0f, 1.0f, 0.0f, 0.0f);
+	SET_P(*vertices+1,  1.0f, 0.0f, 1.0f, 0.4999f, 0.0f);
+	SET_P(*vertices+2,  1.0f, 0.0f,-1.0f, 0.4999f, 0.4999f);
+	SET_P(*vertices+3, -1.0f, 0.0f,-1.0f, 0.0f, 0.4999f);
+
+	SET_P(*vertices+4, -1.0f, 1.0f, 0.0f, 0.0f, 0.4999f);
+	SET_P(*vertices+5,  1.0f, 1.0f, 0.0f, 0.9999f, 0.4999f);
+	SET_P(*vertices+6,  1.0f,-1.0f, 0.0f, 0.9999f, 0.9999f);
+	SET_P(*vertices+7, -1.0f,-1.0f, 0.0f, 0.0f, 	0.9999f);
+
+	*indexCount = 12;
+	*indices = calloc(*indexCount, sizeof(unsigned short));
+
+	unsigned short *i = *indices;
+	i[0] = 0, i[1] = 3, i[2] = 2;
+	i[3] = 0, i[4] = 2, i[5] = 1;
+
+	i[6] = 4, i[7] = 7, i[8] = 6;
+	i[9] = 4, i[10] = 6,i[11] = 5;
+}
+
 static int initScene(scene_t *scene)
 {
 	// load mesh
-	if (!loadSimpleObjFile("gazebo.obj", &scene->vertices, &scene->vertexCount, &scene->indices, &scene->indexCount))
+	// if (!loadSimpleObjFile("test.obj", &scene->vertices, &scene->vertexCount, &scene->indices, &scene->indexCount))
+	// {
+	// 	fprintf(stderr, "Error loading obj file\n");
+	// 	return 0;
+	// }
+
+	add_test_obj(&scene->vertices, &scene->vertexCount, &scene->indices, &scene->indexCount);
+	float s = 0.3f;
+	float worldmatrix[16] = {
+		s,    0.0f, 0.0f, 0.0f,
+		0.0f, s,    0.0f, 0.0f,
+		0.0f, 0.0f, s,    0.0f,
+		0.0f, 0.0f, 0.0f, 1.0f,
+	};
+
+	for (unsigned short iv=0; iv < scene->vertexCount; ++iv)
 	{
-		fprintf(stderr, "Error loading obj file\n");
-		return 0;
+		lm_vec3 p = lm_transformPosition(worldmatrix, *(lm_vec3*)scene->vertices[iv].p);
+		scene->vertices[iv].p[0] = p.x;
+		scene->vertices[iv].p[1] = p.y;
+		scene->vertices[iv].p[2] = p.z;
 	}
 
 	glGenVertexArrays(1, &scene->vao);
@@ -340,6 +384,10 @@ static int loadSimpleObjFile(const char *filename, vertex_t **vertices, unsigned
 			assert(!"unknown vertex attribute");
 		}
 		if (line[0] == 'f') { nf++; continue; }
+		if (line[0] == 'o') { 
+			fprintf(stdout, "objname:%s", line+2);
+			continue;
+		}
 		assert(!"unknown identifier");
 	}
 	assert(np && np == nn && np == nt && nf); // only supports obj files without separately indexed vertex attributes
